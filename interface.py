@@ -12,6 +12,7 @@ class Application():
         self.IMG_FOLDER = '/scratch2/dinka/from_tuna/scratch/cs585/HW4/data/Normalized/v1/'
         self.img_list = sorted(glob.glob(self.IMG_FOLDER + '*.jpg'))
         self.cur_idx = 0
+        self.flow = None
         self.num_images = len(self.img_list)
         self.root.title = "Cell Tracking Project"
         self.cv_img = cv2.cvtColor(cv2.imread(self.img_list[self.cur_idx]), cv2.COLOR_BGR2RGB)
@@ -24,11 +25,15 @@ class Application():
         self.root.bind('<Left>', self.left_key)
         self.root.bind('<Right>', self.right_key)
         self.root.bind('n', self.N_key) # negative
+        self.root.bind('f', self.F_key)  # flow
         self.root.bind('t', self.T_key) # thresholding
+        self.root.bind('d', self.next_flow_key) #flow next
+        self.root.bind('a', self.prev_flow_key) # flow prev
         self.root.bind(1, self.show_video_1)
         self.root.bind(2, self.show_video_2)
         self.thresholded = False
         self.negative = False
+        self.show_flow = False
 
         self.root.mainloop()
 
@@ -47,8 +52,27 @@ class Application():
             self.negative = False
             self.thresholded = False
 
+    def next_flow_key(self, event):
+        if self.show_flow:
+            if self.cur_idx < self.num_images - 1:
+                self.cur_idx += 1
+                self.show_flow_img()
+
+    def prev_flow_key(self, event):
+        if self.show_flow:
+            if self.cur_idx > 0:
+                self.cur_idx -= 1
+                self.show_flow_img()
+
+
+
     def show_image(self):
         self.cv_img = cv2.cvtColor(cv2.imread(self.img_list[self.cur_idx]), cv2.COLOR_BGR2RGB)
+        self.photo = ImageTk.PhotoImage(image=Image.fromarray(self.cv_img))
+        self.canvas.create_image(0, 0, image=self.photo, anchor=tkinter.NW)
+
+    def show_flow_img(self):
+        self.cv_img = cv2.cvtColor(self.flow[..., self.cur_idx], cv2.COLOR_BGR2RGB)
         self.photo = ImageTk.PhotoImage(image=Image.fromarray(self.cv_img))
         self.canvas.create_image(0, 0, image=self.photo, anchor=tkinter.NW)
 
@@ -68,6 +92,18 @@ class Application():
             self.photo = ImageTk.PhotoImage(image=Image.fromarray(self.labels))
             self.canvas.create_image(0, 0, image=self.photo, anchor=tkinter.NW)
             self.thresholded = True
+
+
+    def F_key(self, event):
+        if self.show_flow:
+            self.show_image()
+            self.flow = None
+        else:
+            self.flow = detect.flow(self.img_list)
+            self.show_flow_img()
+        self.show_flow = not self.show_flow
+
+
 
     def show_video_1(self, event):
         self.IMG_FOLDER = '/scratch2/dinka/from_tuna/scratch/cs585/HW4/data/Normalized/v1/'
