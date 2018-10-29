@@ -3,60 +3,6 @@ import cv2
 
 import matplotlib.pyplot as plt
 
-def flow(img_list):
-    n_frames = len(img_list)
-    # params for ShiTomasi corner detection
-    feature_params = dict(maxCorners=100,
-                          qualityLevel=0.9,
-                          minDistance=100,
-                          blockSize=5)
-
-    # Parameters for lucas kanade optical flow
-    lk_params = dict(winSize=(64, 64),
-                     maxLevel=2,
-                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-    # Create some random colors
-    color = np.random.randint(0, 255, (100, 3))
-
-    # Take first frame and find corners in it
-    old_frame = cv2.imread(img_list[0])
-    old_gray = segment_morph(old_frame, False)
-
-
-    p0 = cv2.goodFeaturesToTrack(old_gray, mask=None, **feature_params)
-
-    # Create a mask image for drawing purposes
-    mask = np.zeros_like(old_frame)
-    cur_frame = 1
-    out_img_flow = np.zeros(old_frame.shape + (n_frames,), dtype='uint8')
-    out_img_flow[...,  0] = old_frame
-
-    while(cur_frame < n_frames):
-        frame = cv2.imread(img_list[cur_frame])
-        # frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        frame_grey = segment_morph(frame, False)
-
-        # calculate optical flow
-        p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_grey, p0, None, **lk_params)
-
-        # Select good points
-        good_new = p1[st == 1]
-        good_old = p0[st == 1]
-        # draw the tracks
-        for i, (new, old) in enumerate(zip(good_new, good_old)):
-            a, b = new.ravel()
-            c, d = old.ravel()
-            mask = cv2.line(mask, (a, b), (c, d), color[i].tolist(), 2)
-            frame = cv2.circle(frame, (a, b), 5, color[i].tolist(), -1)
-        img = cv2.add(frame, mask)
-        out_img_flow[..., cur_frame] = img
-
-        # Now update the previous frame and previous points
-        old_gray = frame_grey.copy()
-        p0 = good_new.reshape(-1, 1, 2)
-        cur_frame = cur_frame + 1
-    return out_img_flow
-
 
 # #performs thresholding and closing
 def segment_morph(img, negative):
@@ -114,9 +60,11 @@ def mark_object_centroids(img):
 #     return img_morph
 
 
-def label_img(img):
+def label_img(img, centroids=True):
     _, labels = cv2.connectedComponents(img)
     filtered_labels = filter_small_objects(labels)
+    if not centroids:
+        return filtered_labels
     filtered_labels_w_centroids, _ = mark_object_centroids(filtered_labels)
     # Map component labels to hue val
     label_hue = np.uint8(179 * filtered_labels_w_centroids / np.max(filtered_labels_w_centroids))
