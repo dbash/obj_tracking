@@ -125,7 +125,7 @@ class Application():
             self.show_image()
             self.flow = None
         else:
-            self.multitrack = track.simple_multitracker(self.img_list)
+            self.multitrack = track.simple_multitracker_greedy(self.img_list)
             self.show_multitrack_img()
         self.show_multitrack = not self.show_multitrack
 

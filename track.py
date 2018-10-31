@@ -89,6 +89,7 @@ def simple_multitracker(img_list):
 
     for frame_idx in range(1, n_frames):
         cur_frame = cv2.imread(img_list[frame_idx])
+        #cur_labels = detect.label_img(detect.segment_morph(cur_frame, False), centroids=False)
         ret_frame = cur_frame.copy()
         success, boxes = trackers.update(cur_frame)
         for i, newbox in enumerate(boxes):
@@ -100,5 +101,174 @@ def simple_multitracker(img_list):
     return ret_images
 
 
+def simple_multitracker_greedy(img_list):
+    def dist(point, point_dict):
+        min_dist = 1000000
+        min_dist_idx = -1
+        for key in point_dict.keys():
+            distance = np.sqrt(np.sum((np.array(point)  - np.array(point_dict[key])) ** 2))
+            if distance < min_dist:
+                min_dist = distance
+                min_dist_idx = key
+        return min_dist, min_dist_idx
 
+    def best_overlap(bbox, labels): #finding the object that overlaps with the bbox
+        max_overlap = 0
+        max_overlap_idx = -1
+        bbox_arr = [int(i) for i in bbox]
+        for obj_idx in np.unique(labels)[1:]:
+            mask = labels==obj_idx
+            overlap = np.sum(mask[bbox_arr[1]: bbox_arr[1] + bbox_arr[3],
+                                  bbox_arr[0]:bbox_arr[0] + bbox_arr[2]])/(bbox_arr[2]*bbox_arr[3])#/np.sum(mask)
+            if overlap > max_overlap:
+                max_overlap = overlap
+                max_overlap_idx = obj_idx
+        return max_overlap, max_overlap_idx
+
+    n_frames = len(img_list)
+    cur_frame = cv2.imread(img_list[0])
+    cur_labels = detect.label_img(detect.segment_morph(cur_frame, False), centroids=False)
+    trackers = cv2.MultiTracker()
+    ret_images = []
+    colors = []
+    ret_frame = cur_frame.copy()
+    for obj_label in np.unique(cur_labels): #initializing trackers for each detected object
+        if obj_label == 0:
+            continue
+        bbox = cv2.boundingRect(np.array(cur_labels == obj_label, dtype='uint8'))
+        trackers.add(cv2.TrackerCSRT_create(), cur_frame, bbox)
+        cv2.rectangle(ret_frame, (bbox[0], bbox[1]), (bbox[0] + bbox[2], bbox[1] + bbox[3]),
+                      (0, 255, 0), 2)
+        colors.append((np.random.randint(0, 255), np.random.randint(0, 255),
+                       np.random.randint(0, 255)))
+    ret_images.append(ret_frame)
+    min_overlap = 0.3
+
+    for frame_idx in range(1, n_frames):
+        cur_frame = cv2.imread(img_list[frame_idx])
+        cur_labels = detect.label_img(detect.segment_morph(cur_frame, False), centroids=False)
+        ref_labels = cur_labels.copy()
+        _, cur_centroids = detect.mark_object_centroids(cur_labels)
+        ret_frame = cur_frame.copy()
+        used_box_idx = []
+        success, boxes = trackers.update(cur_frame)
+        found_objects = cur_centroids.copy()
+        for i, newbox in enumerate(boxes):
+            p1 = (int(newbox[0]), int(newbox[1]))
+            p2 = (int(newbox[0] + newbox[2]), int(newbox[1] + newbox[3]))
+            if np.sum(cur_labels[int(newbox[1]):int(newbox[1] + newbox[3]),
+                      int(newbox[0]): int(newbox[0] + newbox[2])]) > 0: #not showing the 'dead' tracks
+                overlap, best_matching_obj_idx = best_overlap(newbox, ref_labels)
+                if overlap>min_overlap: #asign the object with the closest centroid
+                    #cx, cy = cur_centroids[best_matching_obj_idx]
+                    # p1 = (int(newbox[0]), int(newbox[1]))
+                    # p2 =  (int(newbox[0] + newbox[2]), int(newbox[1] + newbox[3]))
+
+                    cv2.rectangle(ret_frame, p1, p2, colors[i], 2, 1)
+                    found_objects.pop(best_matching_obj_idx) #remove this object from the list
+                    ref_labels[ref_labels==best_matching_obj_idx] = 0
+                    used_box_idx.append(i)
+                    #ref_labels[int(newbox[1]): int(newbox[1] + newbox[3]), int(newbox[0]):int(newbox[0] + newbox[2])] = 0
+                # else: #trying to find the occluding objects
+                #     overlap, best_matching_obj_idx = best_overlap(newbox, cur_labels)
+                #     if distance < max_dist//4:
+                #         cx, cy = cur_centroids[best_matching_obj_idx]
+                #         p1 = (int(newbox[0]), int(newbox[1]))
+                #         p2 = (int(newbox[0] + newbox[2]), int(newbox[1] + newbox[3]))
+                #
+                #         cv2.rectangle(ret_frame, p1, p2, colors[i], 2, 1)
+                #         #found_objects.pop(best_matching_obj_idx)  # remove this object from the list
+
+        if len(found_objects) > 0:
+            for obj in found_objects.keys():
+                bbox = cv2.boundingRect(np.array(cur_labels == obj, dtype='uint8'))
+                mask = ref_labels == obj
+                good_bbox = False
+                for i, newbox in enumerate(boxes):
+                    overlap = np.mean(mask[int(newbox[1]):int(newbox[1] + newbox[3]),
+                                      int(newbox[0]): int(newbox[0] + newbox[2])])
+
+                    if overlap > min_overlap/5:
+                        if (i in used_box_idx):
+                            good_bbox = True
+                            break
+                        else:
+                            p1 = (int(newbox[0]), int(newbox[1]))
+                            p2 = (int(newbox[0] + newbox[2]), int(newbox[1] + newbox[3]))
+                            cv2.rectangle(ret_frame, p1, p2, colors[i], 2, 1)
+                            ref_labels[ref_labels == obj] = 0
+                            used_box_idx.append(i)
+                            good_bbox = True
+                            break
+
+                if not good_bbox:
+                    trackers.add(cv2.TrackerCSRT_create(), cur_frame, bbox)
+                    colors.append((np.random.randint(0, 255), np.random.randint(0, 255),
+                                    np.random.randint(0, 255)))
+                    cv2.rectangle(ret_frame, (bbox[0], bbox[1]), (bbox[0] + bbox[2], bbox[1] + bbox[3]),
+                                    colors[-1], 2)
+        ret_images.append(ret_frame)
+
+    return ret_images
+
+#assign tracks to the closest found objects
+def greedy_assignment(tracks, object_centroids):
+    def dist(point, point_list):
+        return np.sqrt(np.sum(point ** 2 - np.array(point_list) ** 2, axis=1))
+
+
+
+
+
+
+
+
+def kalman(img_list):
+    n_frames = len(img_list)
+    cur_frame = cv2.imread(img_list[0])
+    cur_labels = detect.label_img(detect.segment_morph(cur_frame, False), centroids=False)
+    cur_labels, cur_obj_centroids = detect.mark_object_centroids(cur_labels)
+    out_tracking_predictions = []
+    colors = []
+    ret_frame = cur_frame.copy()
+    trackers = {}
+    i = 0
+    for obj_idx in np.unique(cur_labels):  # initializing trackers for each detected object
+        if obj_idx == 0:
+            continue
+        bbox = cv2.boundingRect(np.array(cur_labels == obj_idx, dtype='uint8'))
+
+        cv2.rectangle(ret_frame, (bbox[0], bbox[1]), (bbox[0] + bbox[2], bbox[1] + bbox[3]),
+                      (0, 255, 0), 2)
+        colors.append((np.random.randint(0, 255), np.random.randint(0, 255),
+                       np.random.randint(0, 255)))
+        trackers.update({i:([cur_obj_centroids[obj_idx]], colors[-1])})
+        i+=1
+    out_tracking_predictions.append(ret_frame)
+
+    #init kalman
+    cur_frame = cv2.imread(img_list[0])
+    cur_labels = detect.label_img(detect.segment_morph(cur_frame, False), centroids=False)
+    cur_labels, cur_obj_centroids = detect.mark_object_centroids(cur_labels)
+    ret_frame = cur_frame.copy()
+    i=0
+    for obj_idx in np.unique(cur_labels): #need second frame to initialize kalman
+        if obj_idx == 0:
+            continue
+        bbox = cv2.boundingRect(np.array(cur_labels == obj_idx, dtype='uint8'))
+        cv2.rectangle(ret_frame, (bbox[0], bbox[1]), (bbox[0] + bbox[2], bbox[1] + bbox[3]),
+                      (0, 255, 0), 2)
+        trackers[i][0].append(cur_obj_centroids[obj_idx])
+        i += 1
+    out_tracking_predictions.append(ret_frame)
+
+    # always the same 2D case
+    Transition_Matrix = [[1, 0, 1, 0], [0, 1, 0, 1], [0, 0, 1, 0], [0, 0, 0, 1]]
+    Observation_Matrix = [[1, 0, 0, 0], [0, 1, 0, 0]]
+    initcovariance = 1.0e-3 * np.eye(4)
+    transistionCov = 1.0e-4 * np.eye(4)
+    observationCov = 1.0e-1 * np.eye(2)
+
+
+    #greedy track assignment
 
