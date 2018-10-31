@@ -10,6 +10,7 @@ class Application():
     def __init__(self, root):
         self.root = root
         self.IMG_FOLDER = '/scratch2/dinka/from_tuna/scratch/cs585/HW4/data/Normalized/v1/'
+        self.SAVE_TO_FOLDER = '/scratch2/dinka/from_tuna/scratch/cs585/HW4/obj_tracking/out/multitracking_greedy'
         self.img_list = sorted(glob.glob(self.IMG_FOLDER + '*.jpg'))
         self.cur_idx = 0
         self.flow = None
@@ -31,12 +32,14 @@ class Application():
         self.root.bind('m', self.Multitracking_key)  # multitracking
         self.root.bind('d', self.next_flow_key) #flow next
         self.root.bind('a', self.prev_flow_key) # flow prev
+        self.root.bind('s', self.save_tracking_key) #save tracking images
         self.root.bind(1, self.show_video_1)
         self.root.bind(2, self.show_video_2)
         self.thresholded = False
         self.negative = False
         self.show_flow = False
         self.show_multitrack = False
+        self.cur_video_idx = 1
 
         self.root.mainloop()
 
@@ -74,6 +77,16 @@ class Application():
             if self.cur_idx > 0:
                 self.cur_idx -= 1
                 self.show_multitrack_img()
+
+    def save_tracking_key(self, event):
+        if not os.path.exists(self.SAVE_TO_FOLDER):
+            os.mkdir(self.SAVE_TO_FOLDER)
+        folder = os.path.join(self.SAVE_TO_FOLDER, str(self.cur_video_idx))
+        if not os.path.exists(folder):
+            os.mkdir(folder)
+        for i in range(len(self.multitrack)):
+            fpath = os.path.join(folder, str(i).zfill(2) + '.jpg')
+            cv2.imwrite(fpath, self.multitrack[i])
 
 
     def show_image(self):
@@ -136,6 +149,7 @@ class Application():
         self.img_list = sorted(glob.glob(self.IMG_FOLDER + '*.jpg'))
         self.cur_idx = 0
         self.num_images = len(self.img_list)
+        self.cur_video_idx = 1
         self.show_image()
 
     def show_video_2(self, event):
@@ -143,6 +157,7 @@ class Application():
         self.img_list = sorted(glob.glob(self.IMG_FOLDER + '*.jpg'))
         self.cur_idx = 0
         self.num_images = len(self.img_list)
+        self.cur_video_idx = 2
         self.show_image()
 
 
